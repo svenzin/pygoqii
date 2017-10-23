@@ -3,15 +3,25 @@ import struct
 import time
 from datetime import datetime
 
-
-def bcd(i):
-    r = 0
+def convert(i, a, b):
+    assert(i >= 0)
+    assert(a > 0)
+    assert(b > 0)
+    j = 0
     m = 1
     while i > 0:
-        r += m * (i % 10)
-        m *= 16
-        i //= 10
-    return r
+        j += m * (i % a)
+        m *= b
+        i //= a
+    return j
+
+
+def int_to_bcd(i):
+    return convert(i, 10, 16)
+
+
+def bcd_to_int(bcd):
+    return convert(bcd, 16, 10)
 
 
 block = []
@@ -50,7 +60,8 @@ def cmd(data):
             break
         r = r + block
         block = []
-    return r
+    success = (r[0][1][0] & 0x80) == 0
+    return success, r
 
 UNKNOWN = 'UNKNOWN'
 REBOOT_ = 'REBOOT'
@@ -109,54 +120,61 @@ commands = {
     0x7C: UNKNOWN, 0x7D: UNKNOWN, 0x7E: UNKNOWN, 0x7F: UNKNOWN,
 }
 
-get_time = [0x41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x41]
+
+def packet(command, payload=None):
+    assert(0 <= command < 0x80)
+    assert(payload is None or len(payload) <= 14)
+    block = 16 * [0]
+    block[0] = command
+    if payload is not None:
+        for i, x in enumerate(payload):
+            block[i + 1] = x
+    block[-1] = sum(block) % 256
+    return block
+
+
+get_time = packet(0x41)
 def set_time(t):
-    data = [0] * 16
-    data[0] = 0x01
-    data[1] = bcd(t.year % 100)
-    data[2] = bcd(t.month)
-    data[3] = bcd(t.day)
-    data[4] = bcd(t.hour)
-    data[5] = bcd(t.minute)
-    data[6] = bcd(t.second)
-    data[-1] = sum(data) % 256
-    return data
+    y = int_to_bcd(t.year % 100)
+    m = int_to_bcd(t.month)
+    d = int_to_bcd(t.day)
+    hh = int_to_bcd(t.hour)
+    mm = int_to_bcd(t.minute)
+    ss = int_to_bcd(t.second)
+    return packet(0x01, [y, m, d, hh, mm, ss])
 
-get_display            = [0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x31]
-set_display_horizontal = [0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x31]
-set_display_vertical   = [0x30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30]
+get_display            = packet(0x31)
+set_display_horizontal = packet(0x30, [1])
+set_display_vertical   = packet(0x30, [0])
 
-get_clock     = [0x38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38]
-set_clock_12h = [0x37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x37]
-set_clock_24h = [0x37, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38]
+get_clock     = packet(0x38)
+set_clock_12h = packet(0x37, [0])
+set_clock_24h = packet(0x37, [1])
 
-get_distance            = [0x4f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4f]
-set_distance_kilometers = [0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f]
-set_distance_miles      = [0x0f, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10]
+get_distance            = packet(0x4f)
+set_distance_kilometers = packet(0x0f, [0])
+set_distance_miles      = packet(0x0f, [1])
 
-get_activity_day_0     = [0x43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x43]
-get_activity_day_1     = [0x43, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x44]
-get_activity_day_2     = [0x43, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x45]
-get_activity_day_3     = [0x43, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46]
+get_activity_day_0     = packet(0x43, [0])
+get_activity_day_1     = packet(0x43, [1])
+get_activity_day_2     = packet(0x43, [2])
+get_activity_day_3     = packet(0x43, [3])
 get_activity_today     = get_activity_day_0
 get_activity_yesterday = get_activity_day_1
 
-get_steps_target = [0x4b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4b]
+get_steps_target = packet(0x4b)
 def set_steps_target(n):
-    data = [0] * 16
-    data[0] = 0x0b
-    data[1] = (n // 65536) % 256
-    data[2] = (n // 256) % 256
-    data[3] = n % 256
-    data[-1] = sum(data) % 256
-    return data
+    h = (n // 65536) % 256
+    m = (n // 256) % 256
+    l = n % 256
+    return packet(0x0b, [h, m, l])
 
-reboot = [0x2e, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2e]
-disable = [0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x12]
+reboot = packet(0x2e)
+disable = packet(0x12)
 
-unknown_00 = [0x07, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07]
-unknown_01 = [0x58, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x58]
-unknown_02 = [0x2f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2f]
+unknown_00 = packet(0x07)
+unknown_01 = packet(0x58)
+unknown_02 = packet(0x2f)
 
 
 try:
