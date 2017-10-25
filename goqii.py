@@ -1,7 +1,7 @@
 import bluepy.btle as btle
 import struct
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def convert(i, a, b):
     assert(i >= 0)
@@ -77,6 +77,7 @@ S_DISTF = 'SET DISTANCE FORMAT'
 G_TARGT = 'GET STEPS TARGET'
 S_TARGT = 'SET STEPS TARGET'
 G_ACTIV = 'GET ACTIVITY DETAILS'
+G_HR___ = 'GET HEART RATE DETAILS'
 
 commands = {
     0x00: UNKNOWN, 0x01: S_TIME_, 0x02: UNKNOWN, 0x03: UNKNOWN,
@@ -92,7 +93,7 @@ commands = {
     0x20: UNKNOWN, 0x21: UNKNOWN, 0x22: UNKNOWN, 0x23: UNKNOWN,
     0x24: UNKNOWN, 0x25: UNKNOWN, 0x26: UNKNOWN, 0x27: UNKNOWN,
     0x28: UNKNOWN, 0x29: UNKNOWN, 0x2A: UNKNOWN, 0x2B: UNKNOWN,
-    0x2C: UNKNOWN, 0x2D: UNKNOWN, 0x2E: REBOOT_, 0x2F: UNKNOWN,
+    0x2C: UNKNOWN, 0x2D: UNKNOWN, 0x2E: REBOOT_, 0x2F: G_HR___,
 
     0x30: S_DISPL, 0x31: G_DISPL, 0x32: UNKNOWN, 0x33: UNKNOWN,
     0x34: UNKNOWN, 0x35: UNKNOWN, 0x36: UNKNOWN, 0x37: S_CLOCK,
@@ -133,6 +134,41 @@ def packet(command, payload=None):
     return block
 
 
+def unpacket(packet):
+    assert(len(packet) > 1)
+    packet_sum = sum(packet[:-1]) % 256
+    checksum = packet[-1]
+    assert(packet_sum == checksum)
+    command = packet[0]
+    payload = packet[1:-1]
+    return command, payload, checksum
+
+
+def decode_heart_rate(data):
+    def decode_block(block):
+        id = block[0]
+        seconds = int.from_bytes(block[1:5], byteorder='big')
+        t = datetime(2000, 1, 1) + timedelta(seconds=seconds)
+        hr = [i for i in block[5:8]]
+        return id, t, hr
+
+    command, payload, _ = unpacket(data)
+    assert(command == 0x2F)
+    assert(len(payload) == 18)
+
+    measures = []
+
+    id1, t1, hr1 = decode_block(payload[0:8])
+    if id1 not in [0x00, 0xff]:
+        measures.append((t1, hr1))
+
+    id2, t2, hr2 = decode_block(payload[8:16])
+    if id2 not in [0x00, 0xff]:
+        measures.append((t2, hr2))
+
+    return measures
+
+
 get_time = packet(0x41)
 def set_time(t):
     y = int_to_bcd(t.year % 100)
@@ -169,12 +205,13 @@ def set_steps_target(n):
     l = n % 256
     return packet(0x0b, [h, m, l])
 
+get_heart_rate = packet(0x2f)
+
 reboot = packet(0x2e)
 disable = packet(0x12)
 
 unknown_00 = packet(0x07)
 unknown_01 = packet(0x58)
-unknown_02 = packet(0x2f)
 
 
 try:
