@@ -1,7 +1,7 @@
 import bluepy.btle as btle
 import struct
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 def convert(i, a, b):
     assert(i >= 0)
@@ -167,6 +167,36 @@ def decode_heart_rate(data):
         measures.append((t2, hr2))
 
     return measures
+
+def decode_daily_summary(data):
+    command, payload, _ = unpacket(data)
+    assert(command == 0x07)
+    assert(len(payload) == 14)
+    type = payload[0]
+    assert(type in [0x00, 0x01])
+    index_of_day = payload[1]
+    year = bcd_to_int(payload[2])
+    month = bcd_to_int(payload[3])
+    day = bcd_to_int(payload[4])
+    t = date(year, month, day)
+    if type == 0x00:
+        assert(payload[5] == 0x00)
+        steps = 256 * payload[6] + payload[7]
+        assert(payload[8] == 0x00)
+        assert(payload[9] == 0x00)
+        assert(payload[10] == 0x00)
+        assert(payload[11] == 0x00)
+        unknown = [payload[12], payload[13]]
+        return type, t, steps, unknown
+    elif type == 0x01:
+        assert(payload[5] == 0x00)
+        distance = (256 * payload[6] + payload[7]) / 100
+        active_distance = (256 * payload[8] + payload[9]) / 100
+        assert(payload[10] == 0x00)
+        assert(payload[11] == 0x00)
+        assert(payload[12] == 0x00)
+        assert(payload[13] == 0x00)
+        return type, t, distance, active_distance
 
 
 get_time = packet(0x41)
