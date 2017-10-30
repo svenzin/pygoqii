@@ -63,25 +63,46 @@ def cmd(data):
     success = (r[0][1][0] & 0x80) == 0
     return success, r
 
-UNKNOWN = 'UNKNOWN'
-REBOOT_ = 'REBOOT'
-DISABLE = 'DISABLE'
-G_TIME_ = 'GET TIME'
-S_TIME_ = 'SET TIME'
-G_DISPL = 'GET DISPLAY ORIENTATION'
-S_DISPL = 'SET DISPLAY_ORIENTATION'
-G_CLOCK = 'GET CLOCK FORMAT'
-S_CLOCK = 'SET CLOCK FORMAT'
-G_DISTF = 'GET DISTANCE FORMAT'
-S_DISTF = 'SET DISTANCE FORMAT'
-G_TARGT = 'GET STEPS TARGET'
-S_TARGT = 'SET STEPS TARGET'
-G_ACTIV = 'GET ACTIVITY DETAILS'
-G_HR___ = 'GET HEART RATE DETAILS'
+UNKNOWN = -1
+REBOOT_ = 0x2E
+DISABLE = 0x12
+G_TIME_ = 0x41
+S_TIME_ = 0x01
+G_DISPL = 0x31
+S_DISPL = 0x30
+G_CLOCK = 0x38
+S_CLOCK = 0x37
+G_DISTF = 0x4F
+S_DISTF = 0x0F
+G_TARGT = 0x4B
+S_TARGT = 0x0B
+G_ACTIV = 0x43
+G_HR___ = 0x2F
+G_SUMMA = 0x07
+G_NAME_ = 0x27
+
+names = {
+    UNKNOWN: 'UNKNOWN',
+    REBOOT_: 'REBOOT',
+    DISABLE: 'DISABLE',
+    G_TIME_: 'GET TIME',
+    S_TIME_: 'SET TIME',
+    G_DISPL: 'GET DISPLAY ORIENTATION',
+    S_DISPL: 'SET DISPLAY_ORIENTATION',
+    G_CLOCK: 'GET CLOCK FORMAT',
+    S_CLOCK: 'SET CLOCK FORMAT',
+    G_DISTF: 'GET DISTANCE FORMAT',
+    S_DISTF: 'SET DISTANCE FORMAT',
+    G_TARGT: 'GET STEPS TARGET',
+    S_TARGT: 'SET STEPS TARGET',
+    G_ACTIV: 'GET ACTIVITY DETAILS',
+    G_HR___: 'GET HEART RATE DETAILS',
+    G_SUMMA: 'GET DAILY SUMMARY'
+}
 
 commands = {
     0x00: UNKNOWN, 0x01: S_TIME_, 0x02: UNKNOWN, 0x03: UNKNOWN,
-    0x04: UNKNOWN, 0x05: UNKNOWN, 0x06: UNKNOWN, 0x07: UNKNOWN,
+    0x04: UNKNOWN, 0x05: UNKNOWN, 0x06: UNKNOWN, 0x07: G_SUMMA,
     0x08: UNKNOWN, 0x09: UNKNOWN, 0x0A: UNKNOWN, 0x0B: S_TARGT,
     0x0C: UNKNOWN, 0x0D: UNKNOWN, 0x0E: UNKNOWN, 0x0F: S_DISTF,
 
@@ -91,7 +112,7 @@ commands = {
     0x1C: UNKNOWN, 0x1D: UNKNOWN, 0x1E: UNKNOWN, 0x1F: UNKNOWN,
 
     0x20: UNKNOWN, 0x21: UNKNOWN, 0x22: UNKNOWN, 0x23: UNKNOWN,
-    0x24: UNKNOWN, 0x25: UNKNOWN, 0x26: UNKNOWN, 0x27: UNKNOWN,
+    0x24: UNKNOWN, 0x25: UNKNOWN, 0x26: UNKNOWN, 0x27: G_NAME_,
     0x28: UNKNOWN, 0x29: UNKNOWN, 0x2A: UNKNOWN, 0x2B: UNKNOWN,
     0x2C: UNKNOWN, 0x2D: UNKNOWN, 0x2E: REBOOT_, 0x2F: G_HR___,
 
@@ -197,6 +218,32 @@ def decode_daily_summary(data):
         assert(payload[12] == 0x00)
         assert(payload[13] == 0x00)
         return type, t, distance, active_distance
+
+
+def decode_activity_details(data):
+    command, payload, _ = unpacket(data)
+    assert(command == 0x43)
+    assert(len(payload) == 14)
+    flag = payload[0]
+    assert(flag in [0xff, 0xf0])
+    if flag == 0xff:
+        return None
+    elif flag == 0xf0:
+        year = bcd_to_int(payload[1])
+        month = bcd_to_int(payload[2])
+        day = bcd_to_int(payload[3])
+        t = date(year, month, day)
+        index = payload[4]
+        assert(0 <= index < 0x60)
+        asleep = payload[5]
+        assert(asleep in [0x00, 0xff])
+        if asleep == 0x00:
+            steps = payload[8] + 256 * payload[9]
+            unknown = [payload[i] for i in [6, 7, 10, 11, 12, 13]]
+            return t, index, asleep, steps, unknown
+        elif asleep == 0xff:
+            unknown = [i for i in payload[6:14]]
+            return t, index, asleep, unknown
 
 
 get_time = packet(0x41)
